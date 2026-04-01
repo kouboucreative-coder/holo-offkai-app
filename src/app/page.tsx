@@ -5,6 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -59,6 +60,7 @@ const GENRE_COLORS: Record<string, string> = {
 };
 
 export default function HomePage() {
+  useProfileGuard();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [recommendedEvents, setRecommendedEvents] = useState<OffkaiEvent[]>([]);

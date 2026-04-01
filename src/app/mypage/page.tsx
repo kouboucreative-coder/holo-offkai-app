@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
+import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, query } from "firebase/firestore";
 import { getMemberEmoji } from "@/lib/hololiveMembers";
@@ -82,6 +83,7 @@ function getInitials(name?: string) {
 }
 
 export default function MyPage() {
+  useProfileGuard();
   const [authUser, setAuthUser] = useState<User | null>(auth.currentUser);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [createdEvents, setCreatedEvents] = useState<Event[]>([]);

@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { db, auth } from "@/lib/firebase";
+import { useProfileGuard } from "@/hooks/useProfileGuard";
 import {
   collection,
   query,
@@ -53,6 +54,7 @@ function formatChatTime(timestamp: any): string {
 }
 
 export default function ChatListPage() {
+  useProfileGuard();
   const user = auth.currentUser;
 
   const [eventChats, setEventChats] = useState<EventChat[]>([]);

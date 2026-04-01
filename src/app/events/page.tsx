@@ -5,6 +5,7 @@ import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { db, auth } from "@/lib/firebase";
 import {
   addDoc,
@@ -75,6 +76,7 @@ type Event = {
 };
 
 function EventsContent() {
+  useProfileGuard();
   const searchParams = useSearchParams();
   const initialSearch = searchParams.get("search") || "";
 

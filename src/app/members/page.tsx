@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase";
 import { getMemberEmoji } from "@/lib/hololiveMembers";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import { useProfileGuard } from "@/hooks/useProfileGuard";
 
 // ==================== 型 ====================
 type Member = {
@@ -111,6 +112,7 @@ function MemberCard({ member }: { member: Member }) {
 
 // ==================== メインページ ====================
 export default function MembersPage() {
+  useProfileGuard();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
 
