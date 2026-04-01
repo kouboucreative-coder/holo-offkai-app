@@ -114,6 +114,7 @@ export default function Navbar() {
   const navLinks = [
     { href: "/", label: "ホーム", icon: "🏠" },
     { href: "/events", label: "イベント", icon: "📅" },
+    { href: "/members", label: "メンバー", icon: "👥" },
     { href: "/mypage", label: "マイページ", icon: "👤" },
     { href: "/chat", label: "チャット", icon: "💬" },
     ...(!checkingRole && isAdmin ? [{ href: "/admin", label: "管理", icon: "⚙️" }] : []),
