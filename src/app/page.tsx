@@ -160,7 +160,7 @@ export default function HomePage() {
               </span>
             </p>
           </div>
-          <div className={`w-full py-2.5 rounded-xl text-sm font-bold text-center transition-all ${
+          <div className={`w-full py-3.5 rounded-xl text-sm font-bold text-center transition-all ${
             isFull
               ? "bg-gray-100 text-gray-400"
               : "bg-orange-500 text-white group-hover:bg-orange-600"
@@ -196,31 +196,31 @@ export default function HomePage() {
               仲間とオフ会を探して、作って、楽しもう！
             </p>
 
-            <form onSubmit={handleSearch} className="flex justify-center gap-2 max-w-lg mx-auto mb-6">
+            <form onSubmit={handleSearch} className="flex justify-center gap-2 max-w-lg mx-auto mb-8">
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="イベントを検索..."
-                className="flex-1 px-5 py-3.5 rounded-2xl border-0 shadow-lg focus:outline-none focus:ring-2 focus:ring-white/50 text-gray-800 bg-white text-sm"
+                placeholder="キーワード・都道府県で検索..."
+                className="flex-1 px-5 py-4 rounded-2xl border-0 shadow-lg focus:outline-none focus:ring-2 focus:ring-white/50 text-gray-800 bg-white text-sm"
               />
               <button
                 type="submit"
-                className="px-6 py-3.5 bg-white text-blue-700 rounded-2xl font-bold shadow-lg hover:bg-blue-50 transition text-sm"
+                className="px-5 py-4 bg-white text-blue-700 rounded-2xl font-bold shadow-lg hover:bg-blue-50 transition text-sm shrink-0"
               >
-                検索
+                🔍
               </button>
             </form>
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-              <Link href="/events/create">
-                <button className="px-8 py-3.5 bg-orange-500 text-white rounded-2xl font-bold hover:bg-orange-400 hover:shadow-xl hover:-translate-y-0.5 transition-all shadow-lg text-sm">
-                  ＋ イベントを作成する
+              <Link href="/events">
+                <button className="w-full sm:w-auto px-10 py-4 bg-white text-blue-700 rounded-2xl font-bold hover:bg-blue-50 hover:shadow-xl hover:-translate-y-0.5 transition-all shadow-lg text-base">
+                  オフ会を探す →
                 </button>
               </Link>
-              <Link href="/events">
-                <button className="px-8 py-3.5 bg-white/15 text-white border border-white/30 rounded-2xl font-semibold hover:bg-white/25 transition text-sm backdrop-blur-sm">
-                  イベント一覧を見る →
+              <Link href="/events/create">
+                <button className="w-full sm:w-auto px-8 py-4 bg-white/15 text-white border border-white/30 rounded-2xl font-semibold hover:bg-white/25 transition text-sm backdrop-blur-sm">
+                  ＋ イベントを作る
                 </button>
               </Link>
             </div>
@@ -243,11 +243,13 @@ export default function HomePage() {
                 </Link>
               </div>
               {recommendedEvents.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
-                  <p className="text-gray-400 text-sm">イベントはまだありません。</p>
-                  <Link href="/events/create" className="mt-4 inline-block">
-                    <button className="px-5 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-semibold hover:bg-orange-600 transition mt-3">
-                      最初のイベントを作る
+                <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
+                  <p className="text-3xl mb-3">🎉</p>
+                  <p className="text-gray-700 font-semibold mb-1">まだイベントがありません</p>
+                  <p className="text-gray-400 text-sm mb-5">あなたが最初のオフ会を作ってみよう！</p>
+                  <Link href="/events/create">
+                    <button className="px-6 py-3.5 bg-orange-500 text-white rounded-xl text-sm font-bold hover:bg-orange-600 transition shadow-sm">
+                      ＋ 最初のイベントを作る
                     </button>
                   </Link>
                 </div>
@@ -274,7 +276,11 @@ export default function HomePage() {
                 </Link>
               </div>
               {latestEvents.length === 0 ? (
-                <p className="text-gray-400 text-sm">イベントはまだありません。</p>
+                <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
+                  <p className="text-3xl mb-3">✨</p>
+                  <p className="text-gray-700 font-semibold mb-1">新着イベントはまだありません</p>
+                  <p className="text-gray-400 text-sm">第一号になってオフ会を立ち上げよう！</p>
+                </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                   {latestEvents.map((e) => (

@@ -1,7 +1,7 @@
 // app/events/page.tsx
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
@@ -271,13 +271,13 @@ function EventsContent() {
             <button
               onClick={() => finishEvent(event)}
               disabled={finishingId === event.id}
-              className="w-full py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 hover:-translate-y-0.5 transition-all disabled:opacity-60"
+              className="w-full py-3.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 hover:-translate-y-0.5 transition-all disabled:opacity-60"
             >
               {finishingId === event.id ? "終了処理中..." : "イベントを終了"}
             </button>
           ) : (
             <Link href={getDetailLink(event)} className="block">
-              <div className={`w-full py-2.5 rounded-xl font-bold text-sm text-center transition-all ${
+              <div className={`w-full py-3.5 rounded-xl font-bold text-sm text-center transition-all ${
                 isFull
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                   : "bg-orange-500 text-white hover:bg-orange-600 hover:-translate-y-0.5"
@@ -291,15 +291,22 @@ function EventsContent() {
     );
   };
 
-  const Section = ({ title, subtitle, items }: { title: string; subtitle?: string; items: Event[] }) => (
-    <section className="mb-10">
+  const Section = ({
+    title, subtitle, items, emptyIcon, emptyMessage, emptyAction,
+  }: {
+    title: string; subtitle?: string; items: Event[];
+    emptyIcon?: string; emptyMessage?: string; emptyAction?: React.ReactNode;
+  }) => (
+    <section className="mb-12">
       <div className="mb-5">
         <h2 className="text-lg font-bold text-gray-800">{title}</h2>
         {subtitle && <p className="text-sm text-gray-400 mt-0.5">{subtitle}</p>}
       </div>
       {items.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
-          <p className="text-gray-400 text-sm">イベントはありません。</p>
+        <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
+          {emptyIcon && <p className="text-3xl mb-3">{emptyIcon}</p>}
+          <p className="text-gray-500 text-sm font-medium">{emptyMessage ?? "イベントはありません。"}</p>
+          {emptyAction && <div className="mt-5">{emptyAction}</div>}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -321,7 +328,7 @@ function EventsContent() {
             <p className="text-sm text-gray-400 mt-0.5">参加したいオフ会を見つけよう</p>
           </div>
           <Link href="/events/create">
-            <button className="px-5 py-2.5 bg-orange-500 text-white rounded-xl font-bold text-sm hover:bg-orange-600 hover:-translate-y-0.5 transition-all shadow-sm">
+            <button className="px-5 py-3 bg-orange-500 text-white rounded-xl font-bold text-sm hover:bg-orange-600 hover:-translate-y-0.5 transition-all shadow-sm min-h-[48px]">
               ＋ 作成
             </button>
           </Link>
@@ -330,24 +337,27 @@ function EventsContent() {
         {/* 検索バー */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-10">
           <p className="text-sm font-semibold text-gray-700 mb-3">🔍 イベントを探す</p>
-          <div className="flex gap-3">
+          <div className="relative flex items-center">
             <input
-              type="text"
+              type="search"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="タイトル・都道府県で検索..."
-              className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-800 text-sm"
+              className="w-full px-4 py-3.5 pr-12 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-800 text-sm"
             />
-            <button
-              onClick={() => setSearchTerm("")}
-              className="px-5 py-3 text-sm font-semibold text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition"
-            >
-              クリア
-            </button>
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 text-gray-400 hover:text-gray-600 text-lg leading-none p-1"
+                aria-label="クリア"
+              >
+                ×
+              </button>
+            )}
           </div>
           {searchTerm && (
-            <p className="mt-3 text-xs text-gray-400">
-              「{searchTerm}」の検索結果: {filteredEvents.length} 件
+            <p className="mt-2.5 text-xs text-gray-400">
+              「{searchTerm}」の検索結果: <span className="font-semibold text-gray-600">{filteredEvents.length} 件</span>
             </p>
           )}
         </div>
@@ -356,16 +366,36 @@ function EventsContent() {
           title="自分が作成したイベント"
           subtitle="あなたが主催するイベント"
           items={createdEvents}
+          emptyIcon="📋"
+          emptyMessage="まだイベントを作っていません。最初のオフ会を開いてみよう！"
+          emptyAction={
+            <Link href="/events/create">
+              <button className="px-6 py-3.5 bg-orange-500 text-white rounded-xl text-sm font-bold hover:bg-orange-600 transition shadow-sm">
+                ＋ イベントを作る
+              </button>
+            </Link>
+          }
         />
         <Section
           title="参加しているイベント"
           subtitle="参加登録済みのイベント"
           items={joinedEvents}
+          emptyIcon="🤝"
+          emptyMessage="まだ参加しているイベントはありません。気になるオフ会を探してみよう！"
         />
         <Section
           title="その他のイベント"
           subtitle="参加者を募集中のイベント"
           items={otherEvents}
+          emptyIcon="🔍"
+          emptyMessage="現在募集中のイベントはありません。あなたが最初のイベントを作ってみよう！"
+          emptyAction={
+            <Link href="/events/create">
+              <button className="px-6 py-3.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl text-sm font-bold hover:shadow-md transition">
+                ＋ イベントを作成する
+              </button>
+            </Link>
+          }
         />
       </main>
     </div>
