@@ -1,13 +1,15 @@
 // app/profile/edit/page.tsx
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { auth, db } from "@/lib/firebase";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { auth, db, storage } from "@/lib/firebase";
 import Navbar from "@/components/Navbar";
 import OshiSelector from "@/components/OshiSelector";
 import { useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged, updateProfile, User } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import Image from "next/image";
 
 const PREFECTURES = [
   "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
@@ -19,17 +21,28 @@ const PREFECTURES = [
   "熊本県","大分県","宮崎県","鹿児島県","沖縄県",
 ];
 
-// ──────────────────────────────────────────────────────
-// 内部コンポーネント（useSearchParams を使うため Suspense が必要）
+const MAX_FILE_SIZE = 3 * 1024 * 1024; // 3MB
+
+function getInitials(name?: string): string {
+  if (!name) return "?";
+  return name.charAt(0).toUpperCase();
+}
+
 // ──────────────────────────────────────────────────────
 function ProfileEditContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isFirstSetup = searchParams.get("setup") === "1";
 
-  // 認証状態
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
+
+  // アイコン
+  const [currentPhotoURL, setCurrentPhotoURL] = useState<string>("");
+  const [previewURL, setPreviewURL] = useState<string>("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // フォームの値
   const [newName, setNewName] = useState("");
@@ -75,13 +88,44 @@ function ProfileEditContent() {
         setTiktokUrl((d.tiktokUrl as string) || "");
         setBlogUrl((d.blogUrl as string) || "");
         setOtherUrl((d.otherUrl as string) || "");
+        // 保存済みアイコンURL（Firestore 優先、なければ Auth の photoURL）
+        const savedPhoto = (d.photoURL as string) || authUser.photoURL || "";
+        setCurrentPhotoURL(savedPhoto);
       } else {
-        // Firestoreにドキュメントがなければ Firebase Auth の表示名を使う
         setNewName(authUser.displayName || "");
+        setCurrentPhotoURL(authUser.photoURL || "");
       }
     };
     fetchProfile();
   }, [authUser]);
+
+  // ── ファイル選択ハンドラ ─────────────────────────────
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setErrors((prev) => ({ ...prev, avatar: "画像ファイルを選択してください（JPG / PNG / WebP）" }));
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setErrors((prev) => ({ ...prev, avatar: "ファイルサイズは 3MB 以下にしてください" }));
+      return;
+    }
+
+    setErrors((prev) => { const n = { ...prev }; delete n.avatar; return n; });
+    setAvatarFile(file);
+
+    // ローカルプレビュー
+    const url = URL.createObjectURL(file);
+    setPreviewURL(url);
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarFile(null);
+    setPreviewURL("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   // ── バリデーション ──────────────────────────────────
   const validate = (): Record<string, string> => {
@@ -92,7 +136,10 @@ function ProfileEditContent() {
     return errs;
   };
 
-  const isValidUrl = (url: string) => url === "" || url.startsWith("https://");
+  const isValidUrl = (url: string) => {
+    if (url === "") return true;
+    try { new URL(url); return url.startsWith("https://"); } catch { return false; }
+  };
 
   // ── 保存処理 ────────────────────────────────────────
   const handleUpdate = async () => {
@@ -109,14 +156,31 @@ function ProfileEditContent() {
     const urlFields = [xUrl, youtubeUrl, instagramUrl, tiktokUrl, blogUrl, otherUrl];
     for (const u of urlFields) {
       if (u && !isValidUrl(u)) {
-        setErrors({ url: "URLは https:// から始まる形式で入力してください" });
+        setErrors({ url: "URLは https:// から始まる正しい形式で入力してください" });
         return;
       }
     }
 
     try {
       setSaving(true);
-      await updateProfile(authUser, { displayName: newName });
+
+      // 1. アイコン画像のアップロード（選択されていれば）
+      let photoURL = currentPhotoURL;
+      if (avatarFile) {
+        setUploadingAvatar(true);
+        const storageRef = ref(storage, `avatars/${authUser.uid}`);
+        await uploadBytes(storageRef, avatarFile);
+        photoURL = await getDownloadURL(storageRef);
+        setUploadingAvatar(false);
+      }
+
+      // 2. Firebase Auth プロフィール更新
+      await updateProfile(authUser, {
+        displayName: newName,
+        photoURL: photoURL || null,
+      });
+
+      // 3. Firestore 更新
       await setDoc(
         doc(db, "users", authUser.uid),
         {
@@ -126,6 +190,7 @@ function ProfileEditContent() {
           bio,
           showPrefecture,
           email: authUser.email,
+          photoURL: photoURL || null,
           xUrl,
           youtubeUrl,
           instagramUrl,
@@ -137,25 +202,27 @@ function ProfileEditContent() {
         },
         { merge: true }
       );
-      // 初回設定 → トップ、通常編集 → マイページ
+
       router.replace(isFirstSetup ? "/" : "/mypage");
     } catch (err) {
       console.error("Error updating profile:", err);
       setErrors({ submit: "プロフィール更新に失敗しました。もう一度お試しください。" });
       setSaving(false);
+      setUploadingAvatar(false);
     }
   };
 
-  // ── エラー個別クリア ────────────────────────────────
   const clearError = (key: string) =>
     setErrors((prev) => { const next = { ...prev }; delete next[key]; return next; });
 
-  // ── スタイル ────────────────────────────────────────
   const inputCls = (hasError?: boolean) =>
     `w-full px-4 py-3 rounded-xl border ${
       hasError ? "border-red-400 ring-2 ring-red-100" : "border-gray-200"
     } focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-800 text-sm bg-white`;
   const labelCls = "block text-sm font-medium text-gray-700 mb-1.5";
+
+  // 表示するアイコン URL（プレビュー > 保存済み の優先順位）
+  const displayPhoto = previewURL || currentPhotoURL;
 
   // ── ローディング ────────────────────────────────────
   if (loadingAuth) {
@@ -166,7 +233,6 @@ function ProfileEditContent() {
     );
   }
 
-  // ── 未ログイン ──────────────────────────────────────
   if (!authUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-purple-50/20 flex flex-col">
@@ -179,12 +245,11 @@ function ProfileEditContent() {
   // ── メイン UI ───────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-purple-50/20 flex flex-col">
-      {/* 初回設定モードではナビゲーションを非表示にして他ページへ逃げられないようにする */}
       {!isFirstSetup && <Navbar />}
 
       <main className="flex-1 px-4 py-8 max-w-xl mx-auto w-full">
 
-        {/* ── ページヘッダー ── */}
+        {/* ページヘッダー */}
         <div className="mb-8">
           {isFirstSetup ? (
             <>
@@ -193,12 +258,8 @@ function ProfileEditContent() {
                   👋
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-0.5">
-                    Welcome
-                  </p>
-                  <h1 className="text-2xl font-bold text-gray-900 leading-tight">
-                    プロフィールを設定してください
-                  </h1>
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-0.5">Welcome</p>
+                  <h1 className="text-2xl font-bold text-gray-900 leading-tight">プロフィールを設定してください</h1>
                 </div>
               </div>
               <p className="text-sm text-gray-500 mt-2 leading-relaxed">
@@ -210,12 +271,10 @@ function ProfileEditContent() {
           )}
         </div>
 
-        {/* ── エラーサマリー ── */}
+        {/* エラーサマリー */}
         {Object.keys(errors).length > 0 && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-red-700 mb-2">
-              ⚠️ 以下の項目を確認してください
-            </p>
+            <p className="text-sm font-semibold text-red-700 mb-2">⚠️ 以下の項目を確認してください</p>
             <ul className="space-y-1">
               {Object.values(errors).map((msg, i) => (
                 <li key={i} className="text-xs text-red-600">・{msg}</li>
@@ -226,22 +285,93 @@ function ProfileEditContent() {
 
         <div className="space-y-4">
 
+          {/* ── アイコン設定 ── */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">プロフィールアイコン</h2>
+
+            <div className="flex items-center gap-5">
+              {/* アイコンプレビュー */}
+              <div className="relative shrink-0">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-md border border-gray-100">
+                  {displayPhoto ? (
+                    <Image
+                      src={displayPhoto}
+                      alt="プロフィールアイコン"
+                      width={80}
+                      height={80}
+                      className="w-full h-full object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+                      {getInitials(newName || authUser.displayName || "")}
+                    </div>
+                  )}
+                </div>
+                {/* 変更バッジ */}
+                {previewURL && (
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">✓</span>
+                  </span>
+                )}
+              </div>
+
+              {/* ボタン群 */}
+              <div className="flex-1 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full px-4 py-2.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-sm font-semibold hover:bg-blue-100 transition"
+                >
+                  📷 画像を選択
+                </button>
+
+                {(previewURL || currentPhotoURL) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleRemoveAvatar();
+                      setCurrentPhotoURL("");
+                    }}
+                    className="w-full px-4 py-2 text-gray-500 border border-gray-200 rounded-xl text-xs font-medium hover:bg-gray-50 transition"
+                  >
+                    アイコンを削除
+                  </button>
+                )}
+
+                <p className="text-xs text-gray-400 text-center">
+                  JPG / PNG / WebP・3MB 以下
+                </p>
+              </div>
+            </div>
+
+            {/* ファイル選択（hidden） */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
+            {errors.avatar && (
+              <p className="text-xs text-red-500 mt-3">{errors.avatar}</p>
+            )}
+          </div>
+
           {/* ── 基本情報 ── */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">基本情報</h2>
               {isFirstSetup && (
-                <span className="text-xs bg-red-50 text-red-500 font-bold px-2 py-0.5 rounded-full">
-                  必須
-                </span>
+                <span className="text-xs bg-red-50 text-red-500 font-bold px-2 py-0.5 rounded-full">必須</span>
               )}
             </div>
 
             {/* 名前 */}
             <div>
               <label className={labelCls}>
-                名前
-                <span className="text-red-500 ml-1 text-xs">*必須</span>
+                名前<span className="text-red-500 ml-1 text-xs">*必須</span>
               </label>
               <input
                 type="text"
@@ -250,16 +380,13 @@ function ProfileEditContent() {
                 placeholder="ニックネームなど"
                 className={inputCls(!!errors.name)}
               />
-              {errors.name && (
-                <p className="text-xs text-red-500 mt-1.5">{errors.name}</p>
-              )}
+              {errors.name && <p className="text-xs text-red-500 mt-1.5">{errors.name}</p>}
             </div>
 
             {/* 都道府県 */}
             <div>
               <label className={labelCls}>
-                都道府県
-                <span className="text-red-500 ml-1 text-xs">*必須</span>
+                都道府県<span className="text-red-500 ml-1 text-xs">*必須</span>
               </label>
               <select
                 value={prefecture}
@@ -271,9 +398,7 @@ function ProfileEditContent() {
                   <option key={pref} value={pref}>{pref}</option>
                 ))}
               </select>
-              {errors.prefecture && (
-                <p className="text-xs text-red-500 mt-1.5">{errors.prefecture}</p>
-              )}
+              {errors.prefecture && <p className="text-xs text-red-500 mt-1.5">{errors.prefecture}</p>}
               <label className="mt-2.5 flex items-center gap-2 text-sm text-gray-500 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -304,33 +429,17 @@ function ProfileEditContent() {
               <div className="flex items-center gap-2 mb-0.5">
                 <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">最推し</h2>
                 <span className="text-red-500 text-xs font-bold">*必須</span>
-                {isFirstSetup && (
-                  <span className="text-xs bg-red-50 text-red-500 font-bold px-2 py-0.5 rounded-full">
-                    必須
-                  </span>
-                )}
               </div>
-              <p className="text-xs text-gray-400">
-                グループ → ユニット → メンバーの順に選択してください
-              </p>
-              {errors.oshi && (
-                <p className="text-xs text-red-500 mt-1">{errors.oshi}</p>
-              )}
+              <p className="text-xs text-gray-400">グループ → ユニット → メンバーの順に選択してください</p>
+              {errors.oshi && <p className="text-xs text-red-500 mt-1">{errors.oshi}</p>}
             </div>
-            <OshiSelector
-              value={oshi}
-              onChange={(v) => { setOshi(v); clearError("oshi"); }}
-            />
+            <OshiSelector value={oshi} onChange={(v) => { setOshi(v); clearError("oshi"); }} />
           </div>
 
           {/* ── SNSリンク ── */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">
-              SNSリンク（任意）
-            </h2>
-            {errors.url && (
-              <p className="text-xs text-red-500">{errors.url}</p>
-            )}
+            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide">SNSリンク（任意）</h2>
+            {errors.url && <p className="text-xs text-red-500">{errors.url}</p>}
             {[
               { label: "X", value: xUrl, setter: setXUrl, placeholder: "https://x.com/..." },
               { label: "YouTube", value: youtubeUrl, setter: setYoutubeUrl, placeholder: "https://youtube.com/..." },
@@ -360,13 +469,14 @@ function ProfileEditContent() {
               className={`${isFirstSetup ? "w-full" : "flex-1"} py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-bold text-base hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed`}
             >
               {saving
-                ? "保存中..."
+                ? uploadingAvatar
+                  ? "アイコンをアップロード中..."
+                  : "保存中..."
                 : isFirstSetup
                 ? "設定を完了して始める 🎉"
                 : "保存する"}
             </button>
 
-            {/* 通常編集モードのみキャンセルを表示 */}
             {!isFirstSetup && (
               <button
                 onClick={() => router.push("/mypage")}
@@ -377,7 +487,6 @@ function ProfileEditContent() {
             )}
           </div>
 
-          {/* 初回設定モードのフッターメモ */}
           {isFirstSetup && (
             <p className="text-center text-xs text-gray-400 pb-4">
               ※ プロフィールはあとからマイページでいつでも変更できます
@@ -390,8 +499,6 @@ function ProfileEditContent() {
   );
 }
 
-// ──────────────────────────────────────────────────────
-// デフォルトエクスポート（Suspense でラップ）
 // ──────────────────────────────────────────────────────
 export default function ProfileEditPage() {
   return (

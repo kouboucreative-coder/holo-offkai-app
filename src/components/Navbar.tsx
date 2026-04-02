@@ -12,12 +12,15 @@ import {
 } from "firebase/auth";
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   query,
   where,
   limit,
 } from "firebase/firestore";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 export default function Navbar() {
@@ -38,11 +41,14 @@ export default function Navbar() {
         return;
       }
       try {
-        const snap = await getDocs(
-          query(collection(db, "users"), where("__name__", "==", u.uid))
+        const [userSnap, adminSnap] = await Promise.all([
+          getDoc(doc(db, "users", u.uid)),
+          getDoc(doc(db, "admins", u.uid)),
+        ]);
+        setIsAdmin(
+          adminSnap.exists() ||
+          !!(userSnap.exists() && userSnap.data().role === "admin")
         );
-        const docSnap = snap.docs[0];
-        setIsAdmin(!!(docSnap?.exists() && docSnap.data().role === "admin"));
       } catch (e) {
         console.error("管理者権限の確認に失敗:", e);
         setIsAdmin(false);
@@ -148,8 +154,21 @@ export default function Navbar() {
               {/* ユーザー情報 */}
               {user && (
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                    {user.displayName?.charAt(0) ?? "U"}
+                  <div className="w-9 h-9 rounded-xl overflow-hidden shrink-0 border border-gray-200">
+                    {user.photoURL ? (
+                      <Image
+                        src={user.photoURL}
+                        alt={user.displayName ?? "アイコン"}
+                        width={36}
+                        height={36}
+                        className="w-full h-full object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                        {user.displayName?.charAt(0) ?? "U"}
+                      </div>
+                    )}
                   </div>
                   <p className="text-sm font-semibold text-gray-800 truncate">
                     {user.displayName ?? "ユーザー"}
@@ -231,7 +250,23 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-2 shrink-0">
           {user ? (
             <>
-              <span className="text-sm text-gray-600 max-w-[130px] truncate">
+              <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-gray-200">
+                {user.photoURL ? (
+                  <Image
+                    src={user.photoURL}
+                    alt={user.displayName ?? "アイコン"}
+                    width={32}
+                    height={32}
+                    className="w-full h-full object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                    {user.displayName?.charAt(0) ?? "U"}
+                  </div>
+                )}
+              </div>
+              <span className="text-sm text-gray-600 max-w-[120px] truncate">
                 {user.displayName}
               </span>
               <button

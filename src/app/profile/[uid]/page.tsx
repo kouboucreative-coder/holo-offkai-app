@@ -8,12 +8,14 @@ import { doc, getDoc } from "firebase/firestore";
 import { getMemberEmoji } from "@/lib/hololiveMembers";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import Image from "next/image";
 
 type UserProfile = {
   name?: string;
   bio?: string;
   prefecture?: string;
   oshi?: string;
+  photoURL?: string;
   showPrefecture?: boolean;
   x?: string;
   showX?: boolean;
@@ -28,6 +30,11 @@ type UserProfile = {
   other?: string;
   showOther?: boolean;
 };
+
+function getInitials(name?: string): string {
+  if (!name) return "?";
+  return name.charAt(0).toUpperCase();
+}
 
 export default function UserProfilePage() {
   const { uid } = useParams();
@@ -92,12 +99,31 @@ export default function UserProfilePage() {
         </button>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-5">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">
-            {profile.name || "名無し"}
-          </h1>
+          {/* アバター + 名前 */}
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-sm border border-gray-100 shrink-0">
+              {profile.photoURL ? (
+                <Image
+                  src={profile.photoURL}
+                  alt={profile.name || "アイコン"}
+                  width={64}
+                  height={64}
+                  className="w-full h-full object-cover"
+                  unoptimized
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+                  {getInitials(profile.name)}
+                </div>
+              )}
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {profile.name || "名無し"}
+            </h1>
+          </div>
 
           {profile.bio && (
-            <p className="text-sm text-gray-600 mt-3 whitespace-pre-wrap">{profile.bio}</p>
+            <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{profile.bio}</p>
           )}
 
           <div className="mt-4 grid grid-cols-2 gap-3">
