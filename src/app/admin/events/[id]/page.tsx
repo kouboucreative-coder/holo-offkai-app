@@ -236,7 +236,16 @@ export default function AdminEventDetailPage() {
             <div className="bg-gray-50 rounded p-3">
               <div className="text-gray-500">主催者</div>
               <div className="font-medium text-gray-900">
-                {ev.createdByName || ev.createdBy || "-"}
+                {ev.createdBy ? (
+                  <Link
+                    href={`/profile/${ev.createdBy}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {ev.createdByName || ev.createdBy}
+                  </Link>
+                ) : (
+                  "-"
+                )}
               </div>
             </div>
             <div className="bg-gray-50 rounded p-3">
