@@ -31,15 +31,21 @@ export default function Navbar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
-  // モバイルリダイレクトログイン後の結果を受け取る（ページ初回ロード時のみ実行）
+  // リダイレクト方式ログイン後の結果を受け取る（アプリ全体で1回だけ呼ぶ）
   useEffect(() => {
     getRedirectResult(auth)
       .then(async (result) => {
         if (result?.user) {
+          // リダイレクト経由でログイン成功 → Firestore に同期
           await syncUserToFirestore();
         }
       })
-      .catch((err) => console.error("getRedirectResult error:", err));
+      .catch((err) => {
+        // auth/no-auth-event は通常状態（リダイレクト結果なし）なので無視
+        if (err?.code !== "auth/no-auth-event") {
+          console.error("getRedirectResult error:", err);
+        }
+      });
   }, []);
 
   // 認証 & 管理者チェック

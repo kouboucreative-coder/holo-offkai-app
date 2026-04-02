@@ -10,27 +10,38 @@ import {
 } from "firebase/auth";
 
 /**
- * モバイルブラウザを判定する（iOS Safari / Android はポップアップをブロックするため）
- */
-function isMobileBrowser(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-}
-
-/**
  * Google ログイン
- * - モバイル: signInWithRedirect（ポップアップブロック回避）
- * - PC: signInWithPopup
- * モバイルのリダイレクト後の処理は getRedirectResult で別途行う。
+ *
+ * 戦略:
+ *   1. まず signInWithPopup を試みる（ユーザーのクリックから直接呼ぶため
+ *      モバイルでも動作することが多い）
+ *   2. ポップアップがブロックされた場合のみ signInWithRedirect にフォールバック
+ *      （リダイレクト後の処理は getRedirectResult で Navbar が担当）
  */
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(): Promise<"popup" | "redirect"> {
   const provider = new GoogleAuthProvider();
-  if (isMobileBrowser()) {
-    await signInWithRedirect(auth, provider);
-    // redirect 後はページが再ロードされるため、以降の処理はここに来ない
-  } else {
+  provider.addScope("profile");
+  provider.addScope("email");
+
+  try {
     await signInWithPopup(auth, provider);
     await syncUserToFirestore();
+    return "popup";
+  } catch (err: unknown) {
+    const code = (err as { code?: string }).code ?? "";
+
+    // ポップアップ系エラー → リダイレクトにフォールバック
+    if (
+      code === "auth/popup-blocked" ||
+      code === "auth/popup-closed-by-user" ||
+      code === "auth/cancelled-popup-request"
+    ) {
+      await signInWithRedirect(auth, provider);
+      // redirect 後はページが再ロードされるためここには到達しない
+      return "redirect";
+    }
+
+    throw err; // それ以外のエラーは呼び出し元へ
   }
 }
 
@@ -64,7 +75,6 @@ export async function syncUserToFirestore(): Promise<void> {
 /**
  * Googleで再認証して最新のアイコンURLを取得し、
  * Firebase Auth と Firestore(users/{uid}) に反映する。
- * 成功時は生の photoURL を返す（キャッシュバスターは呼び出し側で付与）。
  */
 export async function syncUserPhoto(): Promise<string | null> {
   const user = auth.currentUser;
@@ -74,7 +84,6 @@ export async function syncUserPhoto(): Promise<string | null> {
     const provider = new GoogleAuthProvider();
     const cred = await reauthenticateWithPopup(user, provider);
 
-    // できる限り Google 側の providerData を優先
     const googleInfo = cred.user.providerData.find(
       (p) => p.providerId === "google.com"
     );
@@ -83,12 +92,10 @@ export async function syncUserPhoto(): Promise<string | null> {
 
     if (!latest) return null;
 
-    // Auth 側のプロフィールを更新（差分があるときだけ）
     if (user.photoURL !== latest) {
       await updateProfile(user, { photoURL: latest });
     }
 
-    // Firestore の users/{uid} に保存（他の項目は壊さない）
     await setDoc(
       doc(db, "users", user.uid),
       { photoURL: latest },

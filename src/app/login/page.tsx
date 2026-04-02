@@ -1,44 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getRedirectResult } from "firebase/auth";
-import { auth } from "@/lib/firebase";
-import { syncUserToFirestore, signInWithGoogle } from "@/lib/authHelpers";
+import { useState } from "react";
+import { signInWithGoogle } from "@/lib/authHelpers";
 import { useRouter } from "next/navigation";
+
+// エラーコードを日本語メッセージに変換
+function getErrorMessage(code: string): string {
+  switch (code) {
+    case "auth/unauthorized-domain":
+      return "このドメインはログインを許可されていません。Firebase コンソールで承認済みドメインに追加してください。";
+    case "auth/network-request-failed":
+      return "ネットワークエラーが発生しました。接続を確認して再試行してください。";
+    case "auth/too-many-requests":
+      return "しばらく時間をおいてから再試行してください。";
+    case "auth/user-disabled":
+      return "このアカウントは無効化されています。";
+    default:
+      return `ログインに失敗しました（${code || "不明なエラー"}）。もう一度お試しください。`;
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // モバイルリダイレクト後の結果処理
-  useEffect(() => {
-    const handleRedirectResult = async () => {
-      try {
-        const result = await getRedirectResult(auth);
-        if (result?.user) {
-          await syncUserToFirestore();
-          router.replace("/");
-        }
-      } catch (err) {
-        console.error("Redirect login failed:", err);
-        setError("ログインに失敗しました。もう一度お試しください。");
-      }
-    };
-    handleRedirectResult();
-  }, [router]);
-
   const handleLogin = async () => {
     try {
       setError("");
       setLoading(true);
-      await signInWithGoogle();
-      // PC（popup）の場合のみここに到達する
-      // モバイル（redirect）の場合はページ遷移するのでここには来ない
-      router.replace("/");
-    } catch (err) {
-      console.error("Login failed:", err);
-      setError("ログインに失敗しました。もう一度お試しください。");
+      const method = await signInWithGoogle();
+      if (method === "popup") {
+        // ポップアップ成功 → ホームへ
+        router.replace("/");
+      }
+      // redirect の場合はページが遷移するため何もしない
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code ?? "";
+      setError(getErrorMessage(code));
+      console.error("Login error:", err);
       setLoading(false);
     }
   };
@@ -52,15 +52,15 @@ export default function LoginPage() {
         <p className="text-gray-500 text-sm mb-8">推し活オフ会をもっと楽しく</p>
 
         {error && (
-          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
-            {error}
+          <div className="mb-5 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 text-left leading-relaxed">
+            ⚠️ {error}
           </div>
         )}
 
         <button
           onClick={handleLogin}
           disabled={loading}
-          className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+          className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
         >
           {loading ? (
             <span className="flex items-center justify-center gap-2">
@@ -72,8 +72,11 @@ export default function LoginPage() {
           )}
         </button>
 
-        <p className="text-xs text-gray-400 mt-6">
-          ログインすることで利用規約・プライバシーポリシーに同意したことになります。
+        <p className="text-xs text-gray-400 mt-6 leading-relaxed">
+          ログインすることで
+          <a href="/terms" className="underline hover:text-gray-600">利用規約</a>・
+          <a href="/privacy" className="underline hover:text-gray-600">プライバシーポリシー</a>
+          に同意したことになります。
         </p>
       </div>
     </div>
