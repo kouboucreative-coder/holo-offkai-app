@@ -4,8 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import {
-  GoogleAuthProvider,
-  signInWithPopup,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   User,
@@ -22,6 +21,7 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { signInWithGoogle, syncUserToFirestore } from "@/lib/authHelpers";
 
 export default function Navbar() {
   const [user, setUser] = useState<User | null>(null);
@@ -30,6 +30,17 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
+
+  // モバイルリダイレクトログイン後の結果を受け取る（ページ初回ロード時のみ実行）
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result?.user) {
+          await syncUserToFirestore();
+        }
+      })
+      .catch((err) => console.error("getRedirectResult error:", err));
+  }, []);
 
   // 認証 & 管理者チェック
   useEffect(() => {
@@ -104,8 +115,7 @@ export default function Navbar() {
   }, [pathname]);
 
   const login = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    await signInWithGoogle();
   };
   const logout = async () => {
     await signOut(auth);

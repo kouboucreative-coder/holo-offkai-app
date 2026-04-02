@@ -4,8 +4,35 @@ import { doc, setDoc, getDoc } from "firebase/firestore";
 import {
   GoogleAuthProvider,
   reauthenticateWithPopup,
+  signInWithPopup,
+  signInWithRedirect,
   updateProfile,
 } from "firebase/auth";
+
+/**
+ * モバイルブラウザを判定する（iOS Safari / Android はポップアップをブロックするため）
+ */
+function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
+
+/**
+ * Google ログイン
+ * - モバイル: signInWithRedirect（ポップアップブロック回避）
+ * - PC: signInWithPopup
+ * モバイルのリダイレクト後の処理は getRedirectResult で別途行う。
+ */
+export async function signInWithGoogle(): Promise<void> {
+  const provider = new GoogleAuthProvider();
+  if (isMobileBrowser()) {
+    await signInWithRedirect(auth, provider);
+    // redirect 後はページが再ロードされるため、以降の処理はここに来ない
+  } else {
+    await signInWithPopup(auth, provider);
+    await syncUserToFirestore();
+  }
+}
 
 /**
  * ログイン後にユーザー情報をFirestore(users/{uid})に同期する。
