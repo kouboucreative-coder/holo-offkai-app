@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase";
 import { getMemberEmoji } from "@/lib/hololiveMembers";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import Image from "next/image";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 
 // ==================== 型 ====================
@@ -59,8 +60,21 @@ function MemberCard({ member }: { member: Member }) {
       <div className="p-5 flex flex-col flex-1">
         {/* ヘッダー：アバター + 名前 + 都道府県 */}
         <div className="flex items-start gap-3 mb-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg font-bold shrink-0 select-none">
-            {getInitials(member.name)}
+          <div className="w-12 h-12 rounded-xl overflow-hidden border border-gray-100 shrink-0">
+            {member.photoURL ? (
+              <Image
+                src={member.photoURL}
+                alt={member.name || "アイコン"}
+                width={48}
+                height={48}
+                className="w-full h-full object-cover"
+                unoptimized
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg font-bold select-none">
+                {getInitials(member.name)}
+              </div>
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-base font-bold text-gray-900 truncate">
