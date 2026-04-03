@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import { saveEventToHistory } from "@/lib/eventHistory";
 
 type ShopEvent = {
   id: string;
@@ -52,6 +53,7 @@ export default function ShopDetailPage() {
   };
 
   useEffect(() => { fetchEvent(); }, [id]);
+  useEffect(() => { if (id) saveEventToHistory(id as string); }, [id]);
 
   const joinEvent = async () => {
     if (!user || !id) return alert("ログインしてください");

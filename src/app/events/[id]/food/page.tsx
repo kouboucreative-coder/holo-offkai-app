@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import { saveEventToHistory } from "@/lib/eventHistory";
 
 type FoodEvent = {
   id: string;
@@ -53,6 +54,7 @@ export default function FoodDetailPage() {
   };
 
   useEffect(() => { fetchEvent(); }, [id]);
+  useEffect(() => { if (id) saveEventToHistory(id as string); }, [id]);
 
   const joinEvent = async () => {
     if (!user || !id) return alert("ログインしてください");

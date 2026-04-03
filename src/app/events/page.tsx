@@ -19,6 +19,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { onAuthStateChanged, User } from "firebase/auth";
+import { getEventHistory } from "@/lib/eventHistory";
 
 // ── 日付ユーティリティ ────────────────────────────────────
 function getLocalDateStr(d = new Date()) {
@@ -130,6 +131,49 @@ function getDetailLink(event: Event): string {
   }
 }
 
+/** おすすめスコアリング（モジュールレベル） */
+function scoreEvent(
+  event: Event,
+  userOshi: string,
+  userPrefecture: string,
+  uid: string | undefined
+): number {
+  // 自分が作成・参加済みは除外
+  if (uid) {
+    const isCreated = event.createdBy === uid;
+    const isJoined =
+      event.participants?.some(
+        (p) => (typeof p === "string" ? p : p.uid) === uid
+      ) ?? false;
+    if (isCreated || isJoined) return -1;
+  }
+
+  let score = 0;
+
+  // 推し一致: +30
+  if (userOshi) {
+    const oshis = [event.targetOshi, event.oshi, ...(event.oshis ?? [])]
+      .filter((o): o is string => Boolean(o));
+    if (oshis.some((o) => o.toLowerCase().includes(userOshi.toLowerCase()))) {
+      score += 30;
+    }
+  }
+
+  // 都道府県一致: +20
+  if (userPrefecture && (event.prefectures ?? []).includes(userPrefecture)) {
+    score += 20;
+  }
+
+  // 日付の近さ
+  const diffDays =
+    (new Date(`${event.date}T00:00`).getTime() - Date.now()) / 86400000;
+  if (diffDays >= 0 && diffDays <= 7) score += 15;
+  else if (diffDays <= 30) score += 10;
+  else if (diffDays <= 90) score += 5;
+
+  return score;
+}
+
 // ── EventCard（モジュールレベル） ──────────────────────
 type EventCardProps = {
   event: Event;
@@ -222,14 +266,34 @@ type SectionProps = {
   emptyMessage?: string;
   emptyAction?: React.ReactNode;
   cardProps: Omit<EventCardProps, "event">;
+  seeAllHref?: string;
 };
 
-function Section({ title, subtitle, items, emptyIcon, emptyMessage, emptyAction, cardProps }: SectionProps) {
+function Section({
+  title,
+  subtitle,
+  items,
+  emptyIcon,
+  emptyMessage,
+  emptyAction,
+  cardProps,
+  seeAllHref,
+}: SectionProps) {
   return (
     <section className="mb-12">
-      <div className="mb-5">
-        <h2 className="text-lg font-bold text-gray-800">{title}</h2>
-        {subtitle && <p className="text-sm text-gray-400 mt-0.5">{subtitle}</p>}
+      <div className="flex items-end justify-between mb-5">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">{title}</h2>
+          {subtitle && <p className="text-sm text-gray-400 mt-0.5">{subtitle}</p>}
+        </div>
+        {seeAllHref && items.length > 0 && (
+          <Link
+            href={seeAllHref}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition whitespace-nowrap"
+          >
+            すべて見る →
+          </Link>
+        )}
       </div>
       {items.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
@@ -238,7 +302,7 @@ function Section({ title, subtitle, items, emptyIcon, emptyMessage, emptyAction,
           {emptyAction && <div className="mt-5">{emptyAction}</div>}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {items.map((e) => <EventCard key={e.id} event={e} {...cardProps} />)}
         </div>
       )}
@@ -275,20 +339,54 @@ function EventsContent() {
   const [loading, setLoading] = useState(true);
   const [finishingId, setFinishingId] = useState<string | null>(null);
 
+  // ユーザープロフィール（おすすめ用）
+  const [userOshi, setUserOshi] = useState("");
+  const [userPrefecture, setUserPrefecture] = useState("");
+
+  // 閲覧履歴（localStorage）
+  const [viewedIds, setViewedIds] = useState<string[]>([]);
+
   // フィルター状態
   const [keyword, setKeyword] = useState(initialSearch);
-  const [prefecture, setPrefecture] = useState("");
+  const [prefectureFilter, setPrefectureFilter] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [oshiFilter, setOshiFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [myEventsFilter, setMyEventsFilter] = useState<MyEventsFilter>("all");
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // 認証状態
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setAuthUser(u));
     return () => unsub();
   }, []);
 
+  // ユーザープロフィール取得
+  useEffect(() => {
+    if (!authUser) {
+      setUserOshi("");
+      setUserPrefecture("");
+      return;
+    }
+    const fetchProfile = async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", authUser.uid));
+        if (snap.exists()) {
+          const d = snap.data() as Record<string, unknown>;
+          setUserOshi((d.oshi as string) || "");
+          setUserPrefecture((d.prefecture as string) || "");
+        }
+      } catch { /* noop */ }
+    };
+    fetchProfile();
+  }, [authUser]);
+
+  // 閲覧履歴を localStorage から読み込む
+  useEffect(() => {
+    setViewedIds(getEventHistory());
+  }, []);
+
+  // イベント取得
   useEffect(() => {
     const fetchEvents = async () => {
       setLoading(true);
@@ -303,7 +401,7 @@ function EventsContent() {
           (e) => ((e.date as string | undefined) ?? "") >= todayLocal
         );
 
-        // 重複を排除して作成者を並列取得（N+1 クエリ解消）
+        // 重複を排除して作成者を並列取得
         const uniqueCreatorIds = [
           ...new Set(
             future
@@ -344,23 +442,23 @@ function EventsContent() {
   // ── フィルター判定 ─────────────────────────────────────
   const isFilterActive = useMemo(() => (
     keyword.trim() !== "" ||
-    prefecture !== "" ||
+    prefectureFilter !== "" ||
     dateFilter !== "all" ||
     oshiFilter.trim() !== "" ||
     statusFilter !== "all" ||
     myEventsFilter !== "all"
-  ), [keyword, prefecture, dateFilter, oshiFilter, statusFilter, myEventsFilter]);
+  ), [keyword, prefectureFilter, dateFilter, oshiFilter, statusFilter, myEventsFilter]);
 
   const activeFilterCount = useMemo(() => [
     keyword.trim() !== "",
-    prefecture !== "",
+    prefectureFilter !== "",
     dateFilter !== "all",
     oshiFilter.trim() !== "",
     statusFilter !== "all",
     myEventsFilter !== "all",
-  ].filter(Boolean).length, [keyword, prefecture, dateFilter, oshiFilter, statusFilter, myEventsFilter]);
+  ].filter(Boolean).length, [keyword, prefectureFilter, dateFilter, oshiFilter, statusFilter, myEventsFilter]);
 
-  // ── 統合フィルター ─────────────────────────────────────
+  // ── 統合フィルター（検索時のみ使用） ──────────────────
   const allFiltered = useMemo(() => {
     const today = getLocalDateStr();
     const now = new Date();
@@ -381,8 +479,8 @@ function EventsContent() {
         ].join(" ").toLowerCase();
         if (!searchTargets.includes(q)) return false;
       }
-      if (prefecture) {
-        if (!(event.prefectures ?? []).some((p) => p === prefecture)) return false;
+      if (prefectureFilter) {
+        if (!(event.prefectures ?? []).some((p) => p === prefectureFilter)) return false;
       }
       if (dateFilter !== "all") {
         const eDate = event.date;
@@ -409,29 +507,56 @@ function EventsContent() {
       }
       return true;
     });
-  }, [events, keyword, prefecture, dateFilter, oshiFilter, statusFilter, myEventsFilter, authUser]);
+  }, [events, keyword, prefectureFilter, dateFilter, oshiFilter, statusFilter, myEventsFilter, authUser]);
 
-  // 3セクション用（フィルターなし時）
-  const createdEvents = useMemo(
-    () => events.filter((e) => e.createdBy === authUser?.uid),
-    [events, authUser]
-  );
-  const joinedEvents = useMemo(
-    () => events.filter(
-      (e) =>
-        e.createdBy !== authUser?.uid &&
-        e.participants?.some((p: Participant) => (typeof p === "string" ? p : p.uid) === authUser?.uid)
-    ),
-    [events, authUser]
-  );
-  const otherEvents = useMemo(
-    () => events.filter(
-      (e) =>
-        e.createdBy !== authUser?.uid &&
-        !e.participants?.some((p: Participant) => (typeof p === "string" ? p : p.uid) === authUser?.uid)
-    ),
-    [events, authUser]
-  );
+  // ── ① あなたにおすすめ ────────────────────────────────
+  const recommendedEvents = useMemo(() => {
+    if (!authUser) {
+      // 未ログイン: 新着6件
+      return events.slice(0, 6);
+    }
+    const uid = authUser.uid;
+    const scored = events
+      .map((e) => ({ event: e, score: scoreEvent(e, userOshi, userPrefecture, uid) }))
+      .filter((x) => x.score >= 0) // -1 は除外（作成済み・参加済み）
+      .sort((a, b) => b.score - a.score);
+
+    if (scored.length === 0) return [];
+
+    // 全部スコア 0 なら先頭6件（未参加・未作成）をそのまま返す
+    return scored.slice(0, 6).map((x) => x.event);
+  }, [events, authUser, userOshi, userPrefecture]);
+
+  // ── ② 近くのイベント ──────────────────────────────────
+  const nearbyEvents = useMemo(() => {
+    const uid = authUser?.uid;
+    const notMine = (e: Event) => {
+      if (!uid) return true;
+      const isCreated = e.createdBy === uid;
+      const isJoined = e.participants?.some(
+        (p) => (typeof p === "string" ? p : p.uid) === uid
+      ) ?? false;
+      return !isCreated && !isJoined;
+    };
+
+    if (userPrefecture) {
+      const prefMatches = events
+        .filter((e) => notMine(e) && (e.prefectures ?? []).includes(userPrefecture));
+      if (prefMatches.length > 0) return prefMatches.slice(0, 6);
+    }
+
+    // 都道府県未設定 or 一致なし → 新着6件（未参加・未作成）
+    return events.filter(notMine).slice(0, 6);
+  }, [events, authUser, userPrefecture]);
+
+  // ── ③ 最近見たイベント ───────────────────────────────
+  const recentEvents = useMemo(() => {
+    if (viewedIds.length === 0) return [];
+    const eventMap = new Map(events.map((e) => [e.id, e]));
+    return viewedIds
+      .map((id) => eventMap.get(id))
+      .filter((e): e is Event => e !== undefined);
+  }, [events, viewedIds]);
 
   // アンケート配布
   const sendSurveyAssignments = useCallback(async (ev: Event) => {
@@ -482,18 +607,33 @@ function EventsContent() {
 
   const resetFilters = useCallback(() => {
     setKeyword("");
-    setPrefecture("");
+    setPrefectureFilter("");
     setDateFilter("all");
     setOshiFilter("");
     setStatusFilter("all");
     setMyEventsFilter("all");
   }, []);
 
-  // EventCard に渡す共通 props（メモ化して参照安定）
   const cardProps = useMemo<Omit<EventCardProps, "event">>(
     () => ({ authUser, finishingId, onFinish: finishEvent }),
     [authUser, finishingId, finishEvent]
   );
+
+  // おすすめセクションのサブタイトル
+  const recommendSubtitle = useMemo(() => {
+    if (!authUser) return "新着のオフ会をチェックしよう";
+    const parts: string[] = [];
+    if (userOshi) parts.push(`推し: ${userOshi}`);
+    if (userPrefecture) parts.push(userPrefecture);
+    return parts.length > 0
+      ? `${parts.join(" · ")} などを基にピックアップ`
+      : "ログイン中ユーザー向けにピックアップ";
+  }, [authUser, userOshi, userPrefecture]);
+
+  const nearbySubtitle = useMemo(() => {
+    if (!userPrefecture) return "あなたの近くで開催されるオフ会";
+    return `${userPrefecture}で開催されるオフ会`;
+  }, [userPrefecture]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-purple-50/20 flex flex-col">
@@ -503,7 +643,7 @@ function EventsContent() {
         {/* ヘッダー */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">イベント一覧</h1>
+            <h1 className="text-2xl font-bold text-gray-900">イベントを探す</h1>
             <p className="text-sm text-gray-400 mt-0.5">参加したいオフ会を見つけよう</p>
           </div>
           <Link href="/events/create">
@@ -569,8 +709,8 @@ function EventsContent() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <span className="text-xs font-semibold text-gray-500 w-20 shrink-0">📍 都道府県</span>
                 <select
-                  value={prefecture}
-                  onChange={(e) => setPrefecture(e.target.value)}
+                  value={prefectureFilter}
+                  onChange={(e) => setPrefectureFilter(e.target.value)}
                   className="flex-1 max-w-xs px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
                 >
                   <option value="">すべて</option>
@@ -678,7 +818,7 @@ function EventsContent() {
             <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
           </div>
         ) : isFilterActive ? (
-          /* フィルター適用時: 単一セクション */
+          /* ── 検索・フィルター結果 ── */
           allFiltered.length === 0 ? (
             <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-14 text-center">
               <p className="text-4xl mb-4">🔍</p>
@@ -692,50 +832,60 @@ function EventsContent() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {allFiltered.map((e) => <EventCard key={e.id} event={e} {...cardProps} />)}
             </div>
           )
         ) : (
-          /* フィルターなし: 3セクション表示 */
+          /* ── 3セクション構成（探すページ） ── */
           <>
+            {/* ① あなたにおすすめ */}
             <Section
-              title="自分が作成したイベント"
-              subtitle="あなたが主催するイベント"
-              items={createdEvents}
-              emptyIcon="📋"
-              emptyMessage="まだイベントを作っていません。最初のオフ会を開いてみよう！"
-              cardProps={cardProps}
+              title="✨ あなたにおすすめ"
+              subtitle={recommendSubtitle}
+              items={recommendedEvents}
+              emptyIcon="🎯"
+              emptyMessage="おすすめのイベントが見つかりませんでした"
               emptyAction={
-                <Link href="/events/create">
-                  <button className="px-6 py-3.5 bg-orange-500 text-white rounded-xl text-sm font-bold hover:bg-orange-600 transition shadow-sm">
-                    ＋ イベントを作る
+                <Link href="/profile/edit">
+                  <button className="px-5 py-2.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-semibold hover:bg-blue-100 transition">
+                    プロフィールを設定してパーソナライズ
                   </button>
                 </Link>
               }
-            />
-            <Section
-              title="参加しているイベント"
-              subtitle="参加登録済みのイベント"
-              items={joinedEvents}
-              emptyIcon="🤝"
-              emptyMessage="まだ参加しているイベントはありません。気になるオフ会を探してみよう！"
               cardProps={cardProps}
             />
+
+            {/* ② 近くのイベント */}
             <Section
-              title="その他のイベント"
-              subtitle="参加者を募集中のイベント"
-              items={otherEvents}
-              emptyIcon="🔍"
-              emptyMessage="現在募集中のイベントはありません。あなたが最初のイベントを作ってみよう！"
-              cardProps={cardProps}
+              title="📍 近くのイベント"
+              subtitle={nearbySubtitle}
+              items={nearbyEvents}
+              emptyIcon="🗾"
+              emptyMessage="近くで開催されるイベントはまだありません"
               emptyAction={
                 <Link href="/events/create">
-                  <button className="px-6 py-3.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl text-sm font-bold hover:shadow-md transition">
-                    ＋ イベントを作成する
+                  <button className="px-5 py-2.5 bg-orange-50 text-orange-600 rounded-xl text-sm font-semibold hover:bg-orange-100 transition">
+                    地元でイベントを作る
                   </button>
                 </Link>
               }
+              cardProps={cardProps}
+            />
+
+            {/* ③ 最近見たイベント */}
+            <Section
+              title="🕐 最近見たイベント"
+              subtitle="最近チェックしたオフ会"
+              items={recentEvents}
+              emptyIcon="👀"
+              emptyMessage="まだ閲覧したイベントはありません"
+              emptyAction={
+                <p className="text-xs text-gray-400">
+                  イベントの詳細を見ると、ここに履歴が表示されます
+                </p>
+              }
+              cardProps={cardProps}
             />
           </>
         )}
