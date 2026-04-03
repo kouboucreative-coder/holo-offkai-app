@@ -82,12 +82,12 @@ function ProfileEditContent() {
         setOshi((d.oshi as string) || "");
         setBio((d.bio as string) || "");
         setShowPrefecture(d.showPrefecture !== false);
-        setXUrl((d.xUrl as string) || "");
-        setYoutubeUrl((d.youtubeUrl as string) || "");
-        setInstagramUrl((d.instagramUrl as string) || "");
-        setTiktokUrl((d.tiktokUrl as string) || "");
-        setBlogUrl((d.blogUrl as string) || "");
-        setOtherUrl((d.otherUrl as string) || "");
+        setXUrl((d.x as string) || "");
+        setYoutubeUrl((d.youtube as string) || "");
+        setInstagramUrl((d.instagram as string) || "");
+        setTiktokUrl((d.tiktok as string) || "");
+        setBlogUrl((d.blog as string) || "");
+        setOtherUrl((d.other as string) || "");
         // 保存済みアイコンURL（Firestore 優先、なければ Auth の photoURL）
         const savedPhoto = (d.photoURL as string) || authUser.photoURL || "";
         setCurrentPhotoURL(savedPhoto);
@@ -191,12 +191,18 @@ function ProfileEditContent() {
           showPrefecture,
           email: authUser.email,
           photoURL: photoURL || null,
-          xUrl,
-          youtubeUrl,
-          instagramUrl,
-          tiktokUrl,
-          blogUrl,
-          otherUrl,
+          x: xUrl,
+          youtube: youtubeUrl,
+          instagram: instagramUrl,
+          tiktok: tiktokUrl,
+          blog: blogUrl,
+          other: otherUrl,
+          showX: !!xUrl,
+          showYoutube: !!youtubeUrl,
+          showInstagram: !!instagramUrl,
+          showTiktok: !!tiktokUrl,
+          showBlog: !!blogUrl,
+          showOther: !!otherUrl,
           profileCompleted: true,
           updatedAt: serverTimestamp(),
         },
