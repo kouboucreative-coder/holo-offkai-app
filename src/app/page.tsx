@@ -390,8 +390,7 @@ export default function HomePage() {
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               2. お知らせ
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-          {notices.length > 0 && (
-            <section>
+          <section>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-base font-bold text-gray-700 flex items-center gap-2">
                   <span className="text-lg">📢</span> お知らせ
@@ -400,30 +399,37 @@ export default function HomePage() {
                   すべて見る →
                 </Link>
               </div>
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
-                {notices.map((n) => (
-                  <div key={n.id} className="flex items-start gap-3 px-5 py-4 hover:bg-gray-50/60 transition">
-                    {n.pinned && (
-                      <span className="mt-0.5 shrink-0 text-xs font-bold px-2 py-0.5 bg-red-50 text-red-500 rounded-full">
-                        重要
-                      </span>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{n.title}</p>
-                      {n.body && (
-                        <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{n.body}</p>
-                      )}
-                    </div>
-                    {n.createdAt && (
-                      <time className="text-xs text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
-                        {formatNoticeDate(n.createdAt)}
-                      </time>
-                    )}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                {notices.length === 0 ? (
+                  <div className="px-5 py-5 text-sm text-gray-400 text-center">
+                    現在お知らせはありません
                   </div>
-                ))}
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {notices.map((n) => (
+                      <div key={n.id} className="flex items-start gap-3 px-5 py-4 hover:bg-gray-50/60 transition">
+                        {n.pinned && (
+                          <span className="mt-0.5 shrink-0 text-xs font-bold px-2 py-0.5 bg-red-50 text-red-500 rounded-full">
+                            重要
+                          </span>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{n.title}</p>
+                          {n.body && (
+                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{n.body}</p>
+                          )}
+                        </div>
+                        {n.createdAt && (
+                          <time className="text-xs text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
+                            {formatNoticeDate(n.createdAt)}
+                          </time>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </section>
-          )}
 
           {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               3. おすすめオフ会
