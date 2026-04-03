@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   doc,
   getDoc,
@@ -48,24 +49,25 @@ export default function AdminEventDetailPage() {
 
   // ===== 管理者チェック =====
   useEffect(() => {
-    const check = async () => {
-      const me = auth.currentUser;
-      if (!me) {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
         router.push("/");
         return;
       }
-      const snap = await getDoc(doc(db, "users", me.uid));
-      const role = snap.exists() ? (snap.data() as any).role : undefined;
-      if (role === "admin") setMeIsAdmin(true);
-      else {
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const role = snap.exists() ? (snap.data() as any).role : undefined;
+        if (role === "admin") setMeIsAdmin(true);
+        else {
+          setMeIsAdmin(false);
+          router.push("/");
+        }
+      } catch {
         setMeIsAdmin(false);
         router.push("/");
       }
-    };
-    check().catch(() => {
-      setMeIsAdmin(false);
-      router.push("/");
     });
+    return () => unsub();
   }, [router]);
 
   // ===== イベント取得 =====

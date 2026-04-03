@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   doc,
   getDoc,
@@ -51,19 +52,21 @@ export default function AdminNoticeDetailPage() {
 
   // ── 管理者チェック ──────────────────────────────────────
   useEffect(() => {
-    (async () => {
-      const me = auth.currentUser;
-      if (!me) { router.push("/"); return; }
-      const [userSnap, adminSnap] = await Promise.all([
-        getDoc(doc(db, "users", me.uid)),
-        getDoc(doc(db, "admins", me.uid)),
-      ]);
-      const ok =
-        (userSnap.exists() && userSnap.data().role === "admin") ||
-        adminSnap.exists();
-      if (ok) { setMeIsAdmin(true); }
-      else { setMeIsAdmin(false); router.push("/"); }
-    })().catch(() => { setMeIsAdmin(false); router.push("/"); });
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) { router.push("/"); return; }
+      try {
+        const [userSnap, adminSnap] = await Promise.all([
+          getDoc(doc(db, "users", user.uid)),
+          getDoc(doc(db, "admins", user.uid)),
+        ]);
+        const ok =
+          (userSnap.exists() && userSnap.data().role === "admin") ||
+          adminSnap.exists();
+        if (ok) { setMeIsAdmin(true); }
+        else { setMeIsAdmin(false); router.push("/"); }
+      } catch { setMeIsAdmin(false); router.push("/"); }
+    });
+    return () => unsub();
   }, [router]);
 
   // ── お知らせ取得 ────────────────────────────────────────

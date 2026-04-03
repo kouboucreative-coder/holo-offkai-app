@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
   getDocs,
@@ -66,8 +67,7 @@ export default function AdminNoticePage() {
 
   // ── 管理者チェック ──────────────────────────────────────
   useEffect(() => {
-    const checkAdmin = async () => {
-      const user = auth.currentUser;
+    const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) { router.push("/"); return; }
       try {
         const [userSnap, adminSnap] = await Promise.all([
@@ -80,8 +80,8 @@ export default function AdminNoticePage() {
         if (ok) { setIsAdmin(true); }
         else { setIsAdmin(false); router.push("/"); }
       } catch { setIsAdmin(false); router.push("/"); }
-    };
-    checkAdmin();
+    });
+    return () => unsub();
   }, [router]);
 
   // ── お知らせ取得 ────────────────────────────────────────

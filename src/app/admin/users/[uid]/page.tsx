@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
   doc,
@@ -119,13 +120,15 @@ export default function AdminUserDetailPage() {
 
   // ── 管理者チェック ──────────────────────────────────────
   useEffect(() => {
-    (async () => {
-      const me = auth.currentUser;
-      if (!me) { router.push("/"); return; }
-      const snap = await getDoc(doc(db, "admins", me.uid));
-      if (snap.exists()) { setMeIsAdmin(true); }
-      else { setMeIsAdmin(false); router.push("/"); }
-    })().catch(() => { setMeIsAdmin(false); router.push("/"); });
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) { router.push("/"); return; }
+      try {
+        const snap = await getDoc(doc(db, "admins", user.uid));
+        if (snap.exists()) { setMeIsAdmin(true); }
+        else { setMeIsAdmin(false); router.push("/"); }
+      } catch { setMeIsAdmin(false); router.push("/"); }
+    });
+    return () => unsub();
   }, [router]);
 
   // ── 対象ユーザー取得 ────────────────────────────────────

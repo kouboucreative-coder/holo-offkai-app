@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
@@ -13,12 +14,8 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const checkAdmin = async () => {
-      const u = auth.currentUser;
-      if (!u) {
-        router.push("/");
-        return;
-      }
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (!u) { router.push("/"); return; }
       try {
         const [userSnap, adminSnap] = await Promise.all([
           getDoc(doc(db, "users", u.uid)),
@@ -37,8 +34,8 @@ export default function AdminPage() {
         setIsAdmin(false);
         router.push("/");
       }
-    };
-    checkAdmin();
+    });
+    return () => unsub();
   }, [router]);
 
   if (isAdmin === null) return (

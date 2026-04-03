@@ -3,8 +3,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
   doc,
@@ -147,7 +149,7 @@ function ScoreBadge({ score }: { score: number }) {
    Page
    ================================================================ */
 export default function AdminDataPage() {
-  const me = auth.currentUser;
+  const router = useRouter();
 
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -168,12 +170,12 @@ export default function AdminDataPage() {
 
   // ── 管理者チェック ──────────────────────────────────────
   useEffect(() => {
-    const run = async () => {
-      if (!me) { setIsAdmin(false); setLoading(false); return; }
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) { router.push("/"); return; }
       try {
         const [userSnap, adminSnap] = await Promise.all([
-          getDoc(doc(db, "users", me.uid)),
-          getDoc(doc(db, "admins", me.uid)),
+          getDoc(doc(db, "users", user.uid)),
+          getDoc(doc(db, "admins", user.uid)),
         ]);
         const ok =
           (userSnap.exists() && (userSnap.data() as { role?: string }).role === "admin") ||
@@ -181,9 +183,9 @@ export default function AdminDataPage() {
         setIsAdmin(ok);
       } catch { setIsAdmin(false); }
       finally { setLoading(false); }
-    };
-    run();
-  }, [me]);
+    });
+    return () => unsub();
+  }, [router]);
 
   // ── データ取得 ──────────────────────────────────────────
   useEffect(() => {
